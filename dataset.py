@@ -4,9 +4,7 @@ from torch.utils.data import DataLoader
 import pytorch_lightning as pl
 
 
-def yahoo_answers_dataset(tok: str = "bert-base-cased", seed: int = 42, val_ratio: float = 0.20,
-                          truncation=True, max_length=256):
-
+def yahoo_answers_dataset(seed: int = 42, train_num: int = 200):
     """
     seed: seed value to be used for random initialisation
     val_ratio: number of samples to be kept as training data
@@ -23,10 +21,8 @@ def yahoo_answers_dataset(tok: str = "bert-base-cased", seed: int = 42, val_rati
     dataset = dataset.rename_columns({"topic": "label",
                                       "question_title": "text"})
 
-    tokenizer = BertTokenizerFast.from_pretrained(tok)
-
     # splitting train into train and validation
-    train_val_split = dataset['train'].train_test_split(train_size=val_ratio,
+    train_val_split = dataset['train'].train_test_split(train_size=train_num,
                                                         load_from_cache_file=True,
                                                         shuffle=True,
                                                         seed=seed)
@@ -36,7 +32,8 @@ def yahoo_answers_dataset(tok: str = "bert-base-cased", seed: int = 42, val_rati
 
 class Dataloader(pl.LightningDataModule):
 
-    def __init__(self, dataset, val_ratio, batch_size, num_workers):
+    def __init__(self, dataset, train_num, tok: str = "bert-base-cased", batch_size=32, num_workers=8, truncation=True,
+                 max_length=256):
         super().__init__(Dataloader)
         self.train = None
         self.val = None
@@ -44,26 +41,26 @@ class Dataloader(pl.LightningDataModule):
         self.dataset = dataset
         self.batch_size = batch_size
         self.num_workers = num_workers
-        self.val_ratio = val_ratio
+        self.train_num = train_num
+        self.truncation = truncation
+        self.max_length = max_length
+        self.tokenizer = BertTokenizerFast.from_pretrained(tok)
 
     def setup(self) -> None:
         if self.dataset == 'YA':
-            self.train, self.val, self.test = yahoo_answers_dataset(val_ratio=self.val_ratio)
+            self.train, self.val, self.test = yahoo_answers_dataset(train_num=self.train_num)
 
         self.train = self.train.map(
-            lambda e: tokenizer(e['text'], truncation=truncation, max_length=max_length, padding='max_length'),
-            batched=True,
-            load_from_cache_file=False)
+            lambda e: self.tokenizer(e['text'], truncation=self.truncation, max_length=self.max_length,
+                                     padding='max_length'), batched=True, load_from_cache_file=False)
 
         self.val = self.val.map(
-            lambda e: tokenizer(e['text'], truncation=truncation, max_length=max_length, padding='max_length'),
-            batched=True,
-            load_from_cache_file=False)
+            lambda e: self.tokenizer(e['text'], truncation=self.truncation, max_length=self.max_length,
+                                     padding='max_length'), batched=True, load_from_cache_file=False)
 
         self.test = self.test.map(
-            lambda e: tokenizer(e['text'], truncation=truncation, max_length=max_length, padding='max_length'),
-            batched=True,
-            load_from_cache_file=False)
+            lambda e: self.tokenizer(e['text'], truncation=self.truncation, max_length=self.max_length,
+                                     padding='max_length'), batched=True, load_from_cache_file=False)
 
         self.train.set_format(type='torch', columns=['input_ids', 'attention_mask', 'label'])
         self.val.set_format(type='torch', columns=['input_ids', 'attention_mask', 'label'])
